@@ -18,9 +18,10 @@ export interface CreateWebAppListingInput {
   description: string;
   category: string;
   launch_url: string;
-  status: string;
+  status: 'draft' | 'published';
   cover_image: string;
   thumbnail_image?: string;
+  price_credits?: number;
 }
 
 export interface LaunchResult {

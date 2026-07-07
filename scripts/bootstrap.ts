@@ -20,6 +20,7 @@ async function main() {
     launch_url: `${config.calculatorBaseUrl}/calculator`,
     status: 'published',
     cover_image: 'https://example.com/calculator-cover.png',
+    price_credits: 1,
   });
 
   console.log(`Listing created: ${listing.listing_id}`);

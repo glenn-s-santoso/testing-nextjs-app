@@ -2,31 +2,53 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 
-// ponytail: JSON file on disk, not Redis/DB — this app has no persistence
-// layer at all today. Upgrade to whatever storage a real producer already
-// has; this file is purely a demonstration of the interface. Uses os.tmpdir()
-// not process.cwd() — Vercel mounts the deployed bundle read-only at
-// /var/task, only /tmp is writable (and ephemeral per invocation).
+import { Redis } from '@upstash/redis';
+
+// Vercel Serverless Functions are isolated per route file — each has its own
+// /tmp, so a file store can never share state between e.g. the callback
+// handler and verify-session. Redis (Vercel KV / Upstash, free tier) is
+// required for that to actually work in production; falls back to a local
+// JSON file for zero-setup local dev, matching the file's original scope
+// (this app has no real persistence layer — demonstration only).
+const REDIS_URL = process.env.MYTHOS_LISTING_UPSTASH_KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.MYTHOS_LISTING_UPSTASH_KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+const REDIS_SET_KEY = 'mythos:listing-ids';
+
+const redis =
+  REDIS_URL && REDIS_TOKEN ? new Redis({ url: REDIS_URL, token: REDIS_TOKEN }) : null;
+
 const STORE_PATH = path.join(os.tmpdir(), 'mythos-calculator-mockup', 'listing-ids.json');
 
-async function readIds(): Promise<string[]> {
+async function readFileStore(): Promise<string[]> {
   try {
-    const raw = await fs.readFile(STORE_PATH, 'utf-8');
+    const raw = await fs.readFile(STORE_PATH, 'utf8');
     return JSON.parse(raw) as string[];
-  } catch {
-    return [];
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
   }
 }
 
-export async function addListingId(id: string): Promise<void> {
-  const ids = await readIds();
-  if (!ids.includes(id)) {
-    ids.push(id);
-    await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-    await fs.writeFile(STORE_PATH, JSON.stringify(ids, null, 2));
+async function writeFileStore(ids: string[]): Promise<void> {
+  await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
+  await fs.writeFile(STORE_PATH, JSON.stringify(ids), 'utf8');
+}
+
+export async function addListingId(listingId: string): Promise<void> {
+  if (redis) {
+    await redis.sadd(REDIS_SET_KEY, listingId);
+    return;
+  }
+  const ids = await readFileStore();
+  if (!ids.includes(listingId)) {
+    ids.push(listingId);
+    await writeFileStore(ids);
   }
 }
 
 export async function getListingIds(): Promise<string[]> {
-  return readIds();
+  if (redis) {
+    return await redis.smembers(REDIS_SET_KEY);
+  }
+  return await readFileStore();
 }

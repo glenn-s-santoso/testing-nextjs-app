@@ -1,10 +1,13 @@
 import { promises as fs } from 'fs';
+import os from 'os';
 import path from 'path';
 
 // ponytail: JSON file on disk, not Redis/DB — this app has no persistence
 // layer at all today. Upgrade to whatever storage a real producer already
-// has; this file is purely a demonstration of the interface.
-const STORE_PATH = path.join(process.cwd(), 'data', 'listing-ids.json');
+// has; this file is purely a demonstration of the interface. Uses os.tmpdir()
+// not process.cwd() — Vercel mounts the deployed bundle read-only at
+// /var/task, only /tmp is writable (and ephemeral per invocation).
+const STORE_PATH = path.join(os.tmpdir(), 'mythos-calculator-mockup', 'listing-ids.json');
 
 async function readIds(): Promise<string[]> {
   try {
